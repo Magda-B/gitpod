@@ -50,6 +50,7 @@ import { EditorReference } from "@gitpod/public-api/lib/gitpod/v1/editor_pb";
 import { converter } from "../service/public-api";
 import { useUpdateCurrentUserMutation } from "../data/current-user/update-mutation";
 import { useAllowedWorkspaceClassesMemo } from "../data/workspaces/workspace-classes-query";
+import { useOrgSettingsQuery } from "../data/organizations/org-settings-query";
 
 type NextLoadOption = "searchParams" | "autoStart" | "allDone";
 
@@ -79,6 +80,7 @@ export function CreateWorkspacePage() {
     const [selectedIde, setSelectedIde, selectedIdeIsDirty] = useDirtyState(defaultIde);
     const { computedDefaultClass, data: allowedWorkspaceClasses } = useAllowedWorkspaceClassesMemo(selectedProjectID);
     const defaultWorkspaceClass = props.workspaceClass ?? computedDefaultClass;
+    const { data: orgSettings } = useOrgSettingsQuery();
     const [selectedWsClass, setSelectedWsClass, selectedWsClassIsDirty] = useDirtyState(defaultWorkspaceClass);
     const [errorWsClass, setErrorWsClass] = useState<React.ReactNode | undefined>(undefined);
     const [contextURL, setContextURL] = useState<string | undefined>(
@@ -459,6 +461,10 @@ export function CreateWorkspacePage() {
                             onSelectionChange={onSelectEditorChange}
                             setError={setErrorIde}
                             selectedIdeOption={selectedIde}
+                            pinnedEditorVersions={
+                                orgSettings?.pinnedEditorVersions &&
+                                new Map<string, string>(Object.entries(orgSettings.pinnedEditorVersions))
+                            }
                             useLatest={useLatestIde}
                             disabled={createWorkspaceMutation.isStarting}
                             loading={workspaceContext.isLoading}
