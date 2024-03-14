@@ -11,6 +11,7 @@ import { DisableScope, Scope } from "../workspaces/workspace-classes-query";
 import { useOrgSettingsQuery } from "../organizations/org-settings-query";
 import { OrganizationSettings } from "@gitpod/public-api/lib/gitpod/v1/organization_pb";
 import { useMemo } from "react";
+import { useConfiguration } from "../configurations/configuration-queries";
 
 const DEFAULT_WS_EDITOR = "code";
 
@@ -39,25 +40,39 @@ interface FilterOptions {
     userDefault?: string;
     ignoreScope?: DisableScope[];
 }
-export const useAllowedWorkspaceEditorsMemo = (options?: FilterOptions) => {
+export const useAllowedWorkspaceEditorsMemo = (configurationId: string | undefined, options?: FilterOptions) => {
     const { data: orgSettings, isLoading: isLoadingOrgSettings } = useOrgSettingsQuery();
     const { data: installationOptions, isLoading: isLoadingInstallationCls } = useIDEOptions();
-    // TODO: repo-level
-
-    const isLoading = isLoadingOrgSettings || isLoadingInstallationCls;
+    const { data: configuration, isLoading: isLoadingConfiguration } = useConfiguration(configurationId ?? "");
+    const isLoading = isLoadingOrgSettings || isLoadingInstallationCls || isLoadingConfiguration;
     const data = useMemo(() => {
-        const result = getAllowedWorkspaceEditors(installationOptions, orgSettings, options);
+        const result = getAllowedWorkspaceEditors(
+            installationOptions,
+            orgSettings,
+            configuration?.workspaceSettings?.restrictedEditorNames,
+            options,
+        );
         return {
             ...result,
             data: toIDEOptions(installationOptions, result.data),
         };
-    }, [installationOptions, orgSettings, options]);
+        // React somehow mis consider empty array is changed even we pass the options constantly,
+        // it causes "Maximum update depth exceeded." error.
+        // So we don't depend on not chaneable properties here and please don't pass empty ignoreScope
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        installationOptions,
+        options?.ignoreScope,
+        orgSettings,
+        configuration?.workspaceSettings?.restrictedEditorNames,
+    ]);
     return { ...data, isLoading };
 };
 
 const getAllowedWorkspaceEditors = (
     installationOptions: IDEOptions | undefined,
     orgSettings: Pick<OrganizationSettings, "restrictedEditorNames"> | undefined,
+    repoRestrictedEditorNames: string[] | undefined,
     options?: FilterOptions,
 ) => {
     let data: AllowedWorkspaceEditor[] = [];
@@ -73,7 +88,7 @@ const getAllowedWorkspaceEditors = (
     }
     let scope: Scope = "installation";
     if (data.length === 0) {
-        return { data, scope, computedDefault: baseDefault };
+        return { data, scope, computedDefault: baseDefault, availableOptions: [] };
     }
     if (
         !options?.ignoreScope?.includes("organization") &&
@@ -87,7 +102,23 @@ const getAllowedWorkspaceEditors = (
         }));
         scope = "organization";
     }
-    // TODO: repo-level
+    if (
+        !options?.ignoreScope?.includes("configuration") &&
+        repoRestrictedEditorNames &&
+        repoRestrictedEditorNames.length > 0
+    ) {
+        data = data.map((d) => {
+            if (d.isDisabledInScope) {
+                return d;
+            }
+            return {
+                ...d,
+                isDisabledInScope: repoRestrictedEditorNames.includes(d.id),
+                disableScope: "configuration",
+            };
+        });
+        scope = "configuration";
+    }
 
     let computedDefault = options?.userDefault;
     const allowedList = data.filter((d) => !d.isDisabledInScope);
@@ -100,10 +131,11 @@ const getAllowedWorkspaceEditors = (
         }
         return e;
     });
+    const availableOptions = data.filter((e) => !e.isDisabledInScope).map((e) => e.id);
     if (options?.filterOutDisabled) {
-        return { data: data.filter((e) => !e.isDisabledInScope), scope, computedDefault };
+        return { data: data.filter((e) => !e.isDisabledInScope), scope, computedDefault, availableOptions };
     }
-    return { data, scope, computedDefault };
+    return { data, scope, computedDefault, availableOptions };
 };
 
 export type LocalIDEOptions = Omit<IDEOptions, "options"> & { options: { [key: string]: AllowedWorkspaceEditor } };

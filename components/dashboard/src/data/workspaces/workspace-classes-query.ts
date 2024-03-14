@@ -131,10 +131,13 @@ export const useAllowedWorkspaceClassesMemo = (
             configuration?.workspaceSettings?.workspaceClass,
             options,
         );
+        // we pass options constantly without change it
+        // so no need to make useMemo depend on it.
+        // (in case problem like `ide-options-query.ts` occurs again)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         installationClasses,
         orgSettings,
-        options,
         configuration?.workspaceSettings?.restrictedWorkspaceClasses,
         configuration?.workspaceSettings?.workspaceClass,
     ]);
